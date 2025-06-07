@@ -18,35 +18,60 @@ except docker.errors.APIError:
 
 
 
-def control_docker(current_path: str, question: str) -> str:
+def control_docker(current_path: str, question: str) -> dict:
+    """
+    Contrôle un conteneur Docker en exécutant une commande à l'intérieur et retourne une réponse JSON.
+    """
     if question.strip() == "quit":
         container.remove(force=True)
-        print("Container removed.")
-        exit(0)
+        return {
+            "path": current_path,
+            "command": question,
+            "output": "Container removed.",
+            "status": "terminated"
+        }
 
     elif question.startswith("cd"):
         parts = question.strip().split()
         if len(parts) < 2:
-            print("Usage: cd <path>")
-            return current_path
+            return {
+                "path": current_path,
+                "command": question,
+                "output": "Usage: cd <path>",
+                "status": "error"
+            }
 
-        # Execute cd and get the new path in one command
         cmd = f"bash -c 'cd \"{current_path}\" && cd \"{parts[1]}\" && pwd'"
         exec_result = container.exec_run(cmd)
         output = exec_result.output.decode(errors="ignore").strip()
 
         if exec_result.exit_code == 0:
-            return output
+            return {
+                "path": output,
+                "command": question,
+                "output": f"Changed directory to {output}",
+                "status": "success"
+            }
         else:
-            print(f"cd: {parts[1]}: No such file or directory")
-            return current_path
+            return {
+                "path": current_path,
+                "command": question,
+                "output": output or "Failed to change directory.",
+                "status": "error"
+            }
 
     else:
         cmd = f"bash -c 'cd \"{current_path}\" && {question}'"
         exec_result = container.exec_run(cmd, tty=True)
-        print(exec_result.output.decode(errors="ignore"))
+        output = exec_result.output.decode(errors="ignore").strip()
 
-    return current_path
+        return {
+            "path": current_path,
+            "command": question,
+            "output": output,
+            "status": "success" if exec_result.exit_code == 0 else "error"
+        }
+
 
 if __name__ == '__main__':
 

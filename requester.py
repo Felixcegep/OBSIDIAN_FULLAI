@@ -4,3 +4,6 @@ def controller(tool: str, argument):
     full_url = base_url + tool + argument
     response = requests.get(full_url)
     return response.json()
+if __name__ == '__main__':
+    test = controller("docker","/pwd/opt/")
+    print(test)

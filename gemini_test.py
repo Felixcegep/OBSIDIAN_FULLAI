@@ -5,29 +5,35 @@ import os
 from google import genai
 from requester import controller
 from scraper import universal_scraper
+from main_ubuntu import control_docker
+import docker
 # Load environment variables (ex: GEMINI_API_KEY)
 dotenv.load_dotenv()
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 # --- Tool list in XML for prompt clarity ---
+
+client = docker.from_env()
+
+# Run Ubuntu and keep it alive
+#ouvrir ubuntu
+try:
+    container = client.containers.run(
+        "ubuntu-with-git",
+        "sleep infinity",
+        detach=True,
+        tty=True,
+        name="ubuntu_chat12"
+    )
+    print(f"Container '{container.name}' started.")
+except docker.errors.APIError:
+    container = client.containers.get("ubuntu_chat12")
+    print("Container already exists. Reusing.")
+
+
 tools = """
 <tools>
-  <tool>
-    <name>color</name>
-    <description>Prints or handles a color string input.</description>
-    <parameters>
-      <type>object</type>
-      <properties>
-        <color>
-          <type>string</type>
-          <description>The name or code of the color</description>
-        </color>
-      </properties>
-      <required>
-        <item>color</item>
-      </required>
-    </parameters>
-  </tool>
+  
   <tool>
     <name>search</name>
     <description>Search something on the backend server.</description>
@@ -46,11 +52,6 @@ tools = """
   </tool>
 </tools>
 """
-
-# --- Tool implementations ---
-def color(color: str):
-    print(f"🎨 Color tool received: {color}")
-
 
 
 # --- LLM call ---
@@ -100,9 +101,8 @@ def execute_tool(parsed):
     tool_name = parsed["tool"]["name"]
     params = parsed["tool"]["parameters"]
 
-    if tool_name == "color":
-        color(params.get("color", ""))
-    elif tool_name == "search":
+
+    if tool_name == "search":
         user_choice = []
         topfive = controller(tool="search/", argument=params.get("query", ""))
         for i, item in enumerate(topfive["searched"]):
@@ -115,9 +115,3 @@ def execute_tool(parsed):
     else:
         print(f"❌ Unknown tool: {tool_name}")
 
-# --- Entry Point ---
-if __name__ == '__main__':
-    question = input("🧠 Ask the assistant: ")
-    result = llm(question)
-    print("🔍 LLM output:", result)
-    execute_tool(result)

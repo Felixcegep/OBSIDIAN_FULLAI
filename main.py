@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 from searxng_search import search
-from main_ubuntu import control_docker
+from main_ubuntu import DockerShell
 import docker
 app = FastAPI()
 def test():
@@ -30,10 +30,10 @@ async def read_item(question:str):
 
 
 
-@app.get("/docker/{command}/{path:path}")
-async def execute_command(command: str, path: str):
-    result = control_docker(f"/{path}", command)
-    return result
+@app.get("/docker/{command}")
+async def execute_command(command: str):
+    print("Executing command:", command)
+    return command
 
 
 

@@ -8,8 +8,7 @@ RUN apt update && \
     rm -rf /var/lib/apt/lists/*
 
 # Clone et création d'une nouvelle branche proprement
-RUN git clone https://github.com/Felixcegep/FMHY-RAG.git /opt/FMHY-RAG && \
-    cd /opt/FMHY-RAG && \
-    git checkout -b test
+RUN git clone --branch test --single-branch https://github.com/Felixcegep/FMHY-RAG.git /opt/FMHY-RAG
+
 
 WORKDIR /opt/FMHY-RAG

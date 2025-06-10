@@ -71,31 +71,32 @@ def llm(question: str):
             Run a shell command to manage the Obsidian vault at `/opt/FMHY-RAG/`.
             Commands must be well-formed and respect the vault's structure.
 
-            **--- File Writing Rules (CRITICAL) ---**
-            To write multi-line Markdown notes, **you MUST use a `heredoc` (`cat <<'EOF' > ...`) for reliability.**
-            This is the only acceptable method for creating files with content, as it avoids shell escaping issues with quotes, newlines, and special characters.
+            ⚠️ CRITICAL: To write multi-line Markdown notes, use only this format:
 
-            **--- Obsidian Vault Guide ---**
-            - **VAULT ROOT:** `/opt/FMHY-RAG/`
-            - `01_Projects/`: Create a new subfolder for each project.
-            - `02_Knowledge/`: For evergreen notes. Place in a topic subfolder (e.g., `Programming/`).
-            - `03_Notes/`: For quick captures, ideas (`Ideas.md`), etc.
-            - `04_Journal/`: For daily notes (`YYYY-MM-DD.md` format).
-            - **Naming:** Use `PascalCase` or `kebab-case` for note titles.
-
-            **--- Note Creation Structure (for `heredoc`) ---**
-            ```markdown
+            mkdir -p /opt/FMHY-RAG/... && cat <<'EOF' > /opt/FMHY-RAG/.../Note.md
             # 📌 Title
             ## Summary
             A brief summary.
             ## Key Points
-            - Point 1
-            - Point 2
+            - One
+            - Two
             ## Links
             - [[Related Note]]
             ## Tags
             #tag1 #tag2
-            ```
+            EOF
+
+            ❌ NEVER use `echo` for multi-line content.
+            ❌ NEVER use `sudo`.
+
+            VAULT STRUCTURE:
+            - /opt/FMHY-RAG/01_Projects/
+            - /opt/FMHY-RAG/02_Knowledge/
+            - /opt/FMHY-RAG/03_Notes/
+            - /opt/FMHY-RAG/04_Journal/
+            - /opt/FMHY-RAG/05_Templates/
+
+            Naming: use PascalCase or kebab-case for file names.
           </description>
           <parameters>
             <type>object</type>
@@ -103,7 +104,7 @@ def llm(question: str):
               <command>
                 <type>string</type>
                 <description>
-                  The full shell command. For file creation, use: `mkdir -p ... && cat <<'EOF' > /path/to/file.md\n[...content...]\nEOF`
+                  Full shell command. Must include `mkdir -p` if necessary, and heredoc format with `cat <<'EOF' > ...`.
                 </description>
               </command>
             </properties>
@@ -117,35 +118,35 @@ def llm(question: str):
     """
 
     system_prompt = f"""
-        You are a function-calling AI agent that MUST return valid JSON.
-        Your one job: examine the USER REQUEST, decide which single tool is appropriate based on the detailed tool descriptions, and output a **single, valid JSON object** that calls that tool.
+    You are a function-calling AI agent that MUST return valid JSON.
+    Your one job: examine the USER REQUEST, decide which single tool is appropriate based on the detailed tool descriptions, and output a **single, valid JSON object** that calls that tool.
 
-        TOOLS AVAILABLE:
-        {tools}
+    TOOLS AVAILABLE:
+    {tools}
 
-        ──────────────────────── RESPONSE FORMAT ────────────────────────
-        Return ONLY a single JSON object with this exact structure:
+    ──────────────────────── RESPONSE FORMAT ────────────────────────
+    Return ONLY a single JSON object with this exact structure:
 
-        {{
-          "tool": {{
-            "name": "<tool_name>",
-            "parameters": {{
-              ... appropriate parameters ...
-            }}
-          }}
+    {{
+      "tool": {{
+        "name": "<tool_name>",
+        "parameters": {{
+          ... appropriate parameters ...
         }}
+      }}
+    }}
 
-        ──────────────────────── STRICT RULES ───────────────────────────
-        CRITICAL:
-        • Return ONLY the JSON object - no markdown, no backticks, no commentary.
-        • For writing files, YOU MUST use the `cat <<'EOF' > ...` heredoc format. DO NOT USE `echo`.
-        • Ensure the heredoc syntax is perfect: `cat <<'EOF' > /path/to/file.md` on the first line, content in the middle, and `EOF` on its own final line.
-        • Commands should NOT use sudo and MUST use `mkdir -p` for directory creation.
-        • If uncertain, use the `search` tool.
+    ──────────────────────── STRICT RULES ───────────────────────────
+    CRITICAL:
+    • Return ONLY the JSON object - no markdown, no backticks, no commentary.
+    • For writing files, YOU MUST use the `cat <<'EOF' > ...` heredoc format. DO NOT USE `echo`.
+    • Ensure the heredoc syntax is perfect: `cat <<'EOF' > /path/to/file.md` on the first line, content in the middle, and `EOF` on its own final line.
+    • Commands should NOT use sudo and MUST use `mkdir -p` for directory creation.
+    • If uncertain, use the `search` tool.
 
-        USER REQUEST:
-        {question}
-        """
+    USER REQUEST:
+    {question}
+    """
 
     try:
         response = client.models.generate_content(

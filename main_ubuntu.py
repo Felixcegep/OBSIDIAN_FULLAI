@@ -1,7 +1,7 @@
 import docker
 
 class DockerShell:
-    def __init__(self, container_name="my_ubuntu_container", image="ubuntu", workdir="/opt"):
+    def __init__(self, container_name="my_ubuntu_container", image="obsidian_dock", workdir="/opt"):
         self.client = docker.from_env()
         self.container_name = container_name
         self.image = image
@@ -51,3 +51,15 @@ class DockerShell:
 
     def get_current_path(self):
         return self.current_path
+
+    def get_tree(self, path=None, depth=2) -> str:
+        """Get a tree-like listing of the given directory, excluding .git."""
+        target_path = path or self.current_path
+        tree_command = (
+            f"bash -c 'cd \"{target_path}\" && "
+            f"find . -maxdepth {depth} -print | grep -v \"^./.git\" "
+            f"| sed -e \"s/[^\\/]*\\//|   /g\" -e \"s/|   \\([^|]\\)/|--- \\1/\"'"
+        )
+        result = self.container.exec_run(tree_command, tty=True)
+        return result.output.decode(errors="ignore").strip()
+

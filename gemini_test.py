@@ -335,11 +335,18 @@ def execute_tool(parsed):
         url = f"http://127.0.0.1:8000/docker/{command}"
         print("API Endpoint:", url)
 
-        # Execute the Docker command using a helper (must be defined)
+        # Execute the Docker command
         result = machine.run_command(command)
-        print("wow",result)
-        return f"Result of Docker command '{command}':\n{result}"
+        print("Command output:", result)
 
+        # Get tree structure of /opt/FMHY-RAG
+        tree_output = machine.get_tree("/opt/FMHY-RAG")
+        print("Tree output:\n", tree_output)
+
+        return (
+            f"🧪 Result of Docker command '{command}':\n{result}\n\n"
+            f"📁 Tree of THE OBSIDIAN VAULT IN /opt/FMHY-RAG:\n{tree_output}"
+        )
     else:
         return f"Error: Unknown tool name '{tool_name}'."
 

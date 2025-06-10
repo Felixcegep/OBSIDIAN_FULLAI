@@ -24,6 +24,7 @@ tools = """
       Your primary function is to interpret user intent, reason through steps, and delegate execution to tools when necessary.
       The VM is already updated—do not attempt apt upgrade or system updates.
       Tool use must be efficient, minimal, and deliberate.
+      When writing to files, you specialize in generating well-structured Obsidian Markdown notes.
     </description>
     <capabilities>
       <reasoning>true</reasoning>
@@ -67,8 +68,15 @@ tools = """
       <name>execute_docker_command</name>
       <description>
         Run a shell command within the Docker environment. Commands must be well-formed; this tool does not infer intent or sanitize input.
-        When writing text files, all content must be correctly formatted in **Markdown**, including proper use of `#` for headings, `-` for lists, `**` for bold, and fenced blocks for code.
-        Prefer `echo -e "..." > file.md` or a `<<EOF` heredoc block for multi-line files. Ensure all `\n` are properly escaped.
+        When writing text files, all content must be correctly formatted in **Markdown** optimized for Obsidian.
+        Follow these rules:
+        - Use `#` for headers (`#`, `##`, `###`, etc.)
+        - Use `-` for bullet lists, `1.` for numbered lists
+        - Enclose code in triple backticks (```) for code blocks
+        - Bold using `**`, italic using `_`
+        - Prefer `echo -e` or heredocs for writing multi-line notes
+        - Escape all quotes and newlines properly (e.g., `\"`, `\\n`)
+        Output should be short, clean, and suitable for insertion into `.md` files inside an Obsidian vault.
       </description>
       <parameters>
         <type>object</type>
@@ -76,9 +84,6 @@ tools = """
           <command>
             <type>string</type>
             <description>The full shell command to run (e.g., 'ls /opt', 'echo -e "# Title\\n\\n**Bold text**" > doc.md').</description>
-            when echo the text should be Short in lenght, clean string with escaped quotes
-            exemple API Endpoint: http://127.0.0.1:8000/docker/echo -e "The page provides the definition of the word \"dawg.\" It is a facetious spelling of \"dog\" and is used in two main senses:\n\n1.  As a substitute for \"dog\" in various contexts.\n2.  As slang to refer to a man, buddy, or dude, especially as a familiar form of address." >> dawg.txt
-
           </command>
         </properties>
         <required>
@@ -88,6 +93,7 @@ tools = """
     </tool>
   </tools>
 </system>
+
 
 
 """

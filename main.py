@@ -11,10 +11,11 @@ def test():
 async def read_root():
     test()
     return {"message": "Hello, dasd!"}
-@app.get("/search/{question}")
-async def read_item(question:str):
+@app.get("/search")
+async def read_item(question: str):
     raw_results = search(question)
     liste_topfive = []
+
     def clean_item(item):
         return {
             "title": item.get("title", ""),
@@ -27,7 +28,6 @@ async def read_item(question:str):
         liste_topfive.append(clean_item(item))
 
     return {"question": question, "searched": liste_topfive}
-
 
 
 @app.get("/docker/{command}")

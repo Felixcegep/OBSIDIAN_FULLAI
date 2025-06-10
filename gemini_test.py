@@ -76,6 +76,9 @@ tools = """
           <command>
             <type>string</type>
             <description>The full shell command to run (e.g., 'ls /opt', 'echo -e "# Title\\n\\n**Bold text**" > doc.md').</description>
+            when echo the text should be Short in lenght, clean string with escaped quotes
+            exemple API Endpoint: http://127.0.0.1:8000/docker/echo -e "The page provides the definition of the word \"dawg.\" It is a facetious spelling of \"dog\" and is used in two main senses:\n\n1.  As a substitute for \"dog\" in various contexts.\n2.  As slang to refer to a man, buddy, or dude, especially as a familiar form of address." >> dawg.txt
+
           </command>
         </properties>
         <required>

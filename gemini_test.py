@@ -15,16 +15,15 @@ client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 # --- Tool list in XML for prompt clarity ---
 machine = DockerShell()
 
-
 tools = """
 <system>
   <identity>
     <role>intelligent assistant</role>
     <description>
-      You are a smart assistant capable of interpreting user messages, reasoning step by step, and deciding when to call tools.
-      The virtual machine (VM) you are working with is already up to date, so there is no need to run apt upgrade or system update commands.
-      Only use the search tool when the task involves a new concept you haven't seen before or when a problem arises that cannot be solved directly.
-      You always return tool calls in valid JSON format. Never return plain text or raw commands unless explicitly requested.
+      You are an intelligent, goal-directed assistant operating within a virtual machine.
+      Your primary function is to interpret user intent, reason through steps, and delegate execution to tools when necessary.
+      The VM is already updated—do not attempt apt upgrade or system updates.
+      Tool use must be efficient, minimal, and deliberate.
     </description>
     <capabilities>
       <reasoning>true</reasoning>
@@ -36,25 +35,26 @@ tools = """
 
   <behavior>
     <onUserMessage>
-      <step>1. Understand the user's intent from the message.</step>
-      <step>2. If a tool is needed, decide which one best fits the task.</step>
-      <step>3. Only use the search tool if the information is not known or if an error needs external troubleshooting.</step>
-      <step>4. Prepare the tool call by clearly filling the required parameters.</step>
-      <step>5. Respond using valid JSON format with the tool name and parameters.</step>
-      <step>6. Do not include explanations or commentary outside the JSON unless asked.</step>
+      <step>1. Parse the user's intent precisely.</step>
+      <step>2. Determine if a tool is required to satisfy the request.</step>
+      <step>3. Only use the <search> tool if the concept is unknown or execution fails unexpectedly.</step>
+      <step>4. When using a tool, return a strict JSON object that includes only the tool name and required parameters.</step>
+      <step>5. Do not add comments, markdown, or plain text responses unless explicitly requested.</step>
     </onUserMessage>
   </behavior>
 
   <tools>
     <tool>
       <name>search</name>
-      <description>Search something on the backend server based on a given query. Only use if the concept is new or if a known method fails.</description>
+      <description>
+        Query the backend search system for information not known to the model or when errors require external troubleshooting.
+      </description>
       <parameters>
         <type>object</type>
         <properties>
           <query>
             <type>string</type>
-            <description>The search term or question to query.</description>
+            <description>The search term or question to resolve the user's request.</description>
           </query>
         </properties>
         <required>
@@ -66,14 +66,16 @@ tools = """
     <tool>
       <name>execute_docker_command</name>
       <description>
-        Execute a shell command inside a running Docker container. The tool does not infer intent—commands must be precise.
+        Run a shell command within the Docker environment. Commands must be well-formed; this tool does not infer intent or sanitize input.
+        When writing text files, all content must be correctly formatted in **Markdown**, including proper use of `#` for headings, `-` for lists, `**` for bold, and fenced blocks for code.
+        Prefer `echo -e "..." > file.md` or a `<<EOF` heredoc block for multi-line files. Ensure all `\n` are properly escaped.
       </description>
       <parameters>
         <type>object</type>
         <properties>
           <command>
             <type>string</type>
-            <description>The shell command to execute (e.g., 'ls', 'cat file.txt').</description>
+            <description>The full shell command to run (e.g., 'ls /opt', 'echo -e "# Title\\n\\n**Bold text**" > doc.md').</description>
           </command>
         </properties>
         <required>
@@ -84,19 +86,20 @@ tools = """
   </tools>
 </system>
 
-"""
 
+"""
 
 
 def llm(question: str):
     system_prompt = f"""
-    You are a function-calling AI agent. Your only task is to select **one** tool from the list below and respond using the exact JSON structure provided.
+    You are a function-calling AI agent that MUST return valid JSON.
+    Your one job: examine the USER REQUEST, decide which single tool is appropriate, and output a **single, valid JSON object** that calls that tool.
 
     TOOLS AVAILABLE:
     {tools}
 
-    RESPONSE FORMAT:
-    You MUST respond with exactly one tool call in **valid JSON**, and nothing else. The format is:
+    ──────────────────────── RESPONSE FORMAT ────────────────────────
+    Return ONLY a single JSON object with this exact structure:
 
     {{
       "tool": {{
@@ -107,44 +110,70 @@ def llm(question: str):
       }}
     }}
 
-    STRICT RULES:
-    - You must return a single valid JSON object exactly in the format described above.
-    - Do NOT explain your choice.
-    - Do NOT add any commentary, disclaimers, or error messages — respond with JSON only.
-    - Do NOT wrap the JSON in Markdown, triple backticks, or quotes.
-    - All values MUST be properly quoted if they are strings.
-    - The JSON must be syntactically valid and directly parseable by `json.loads()`.
-    - NEVER use `sudo` in any command. Assume all commands will be executed as root.
-    - When creating directories using `mkdir`, always use the `-p` option (i.e., `mkdir -p`) to prevent errors if the directory already exists.
-    - If you're unsure what to do, default to using the `search` tool with the user's request as the query.
+    ──────────────────────── STRICT RULES ───────────────────────────
+    CRITICAL:
+    • Return ONLY the JSON object - no markdown, no backticks, no commentary
+    • Every string value MUST be properly quoted
+    • If you're uncertain about the task, use the search tool with the user's question as the query
+    • Commands should NOT use sudo (assume root access)
+    • Always use mkdir -p for directory creation
 
-    EXAMPLE RESPONSE:
-    {{
-      "tool": {{
-        "name": "execute_docker_command",
-        "parameters": {{
-          "command": "mkdir -p /opt/my_folder"
-        }}
-      }}
-    }}
+    TOOL SELECTION:
+    • Use "search" for: new concepts, troubleshooting, unknown information
+    • Use "execute_docker_command" for: file operations, system commands, running programs
 
     USER REQUEST:
     {question}
     """
 
-    response = client.models.generate_content(
-        model="gemini-2.0-flash",
-        config=types.GenerateContentConfig(
-            system_instruction=system_prompt),
-        contents=question
-    )
-
     try:
-        parsed = json.loads(response.text[7:-4])
-        print(parsed)
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            config=types.GenerateContentConfig(
+                system_instruction=system_prompt),
+            contents=question
+        )
+
+        # Clean the response text
+        response_text = response.text.strip()
+
+        # Remove common markdown artifacts
+        if response_text.startswith("```json"):
+            response_text = response_text[7:]
+        if response_text.endswith("```"):
+            response_text = response_text[:-3]
+        if response_text.startswith("```"):
+            response_text = response_text[3:]
+
+        response_text = response_text.strip()
+
+        # Try to parse the JSON
+        parsed = json.loads(response_text)
+        print("Parsed successfully:", parsed)
         return parsed
-    except json.decoder.JSONDecodeError:
-        return f"erreur {response.text} is not a valid JSON object"
+
+    except json.JSONDecodeError:
+        # If JSON parsing fails, fall back to search
+        print(f"JSON parsing failed, falling back to search for: {question}")
+        return {
+            "tool": {
+                "name": "search",
+                "parameters": {
+                    "query": question
+                }
+            }
+        }
+    except Exception as e:
+        # For any other error, also fall back to search
+        print(f"Unexpected error, falling back to search for: {question}")
+        return {
+            "tool": {
+                "name": "search",
+                "parameters": {
+                    "query": question
+                }
+            }
+        }
 
 def the_planner(question: str):
     test = """
@@ -299,6 +328,7 @@ def execute_tool(parsed):
 
         # Execute the Docker command using a helper (must be defined)
         result = machine.run_command(command)
+        print("wow",result)
         return f"Result of Docker command '{command}':\n{result}"
 
     else:
@@ -320,5 +350,5 @@ if __name__ == '__main__':
             context_prompt = session_history + info + question
             parsed = llm(context_prompt)
             result = execute_tool(parsed)
-            print("result", result)
+            print(result)
             session_history += f"\n> {question}\n{result}\n"

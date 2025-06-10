@@ -15,125 +15,137 @@ client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 # --- Tool list in XML for prompt clarity ---
 machine = DockerShell()
 
-tools = """
-<system>
-  <identity>
-    <role>intelligent assistant</role>
-    <description>
-      You are an intelligent, goal-directed assistant operating within a virtual machine.
-      Your primary function is to interpret user intent, reason through steps, and delegate execution to tools when necessary.
-      The VM is already updated—do not attempt apt upgrade or system updates.
-      Tool use must be efficient, minimal, and deliberate.
-      When writing to files, you specialize in generating well-structured Obsidian Markdown notes.
-    </description>
-    <capabilities>
-      <reasoning>true</reasoning>
-      <chainOfThought>true</chainOfThought>
-      <toolUse>true</toolUse>
-      <multiStep>true</multiStep>
-    </capabilities>
-  </identity>
 
-  <behavior>
-    <onUserMessage>
-      <step>1. Parse the user's intent precisely.</step>
-      <step>2. Determine if a tool is required to satisfy the request.</step>
-      <step>3. Only use the <search> tool if the concept is unknown or execution fails unexpectedly.</step>
-      <step>4. When using a tool, return a strict JSON object that includes only the tool name and required parameters.</step>
-      <step>5. Do not add comments, markdown, or plain text responses unless explicitly requested.</step>
-    </onUserMessage>
-  </behavior>
-
-  <tools>
-    <tool>
-      <name>search</name>
-      <description>
-        Query the backend search system for information not known to the model or when errors require external troubleshooting.
-      </description>
-      <parameters>
-        <type>object</type>
-        <properties>
-          <query>
-            <type>string</type>
-            <description>The search term or question to resolve the user's request.</description>
-          </query>
-        </properties>
-        <required>
-          <item>query</item>
-        </required>
-      </parameters>
-    </tool>
-
-    <tool>
-      <name>execute_docker_command</name>
-      <description>
-        Run a shell command within the Docker environment. Commands must be well-formed; this tool does not infer intent or sanitize input.
-        When writing text files, all content must be correctly formatted in **Markdown** optimized for Obsidian.
-        Follow these rules:
-        - Use `#` for headers (`#`, `##`, `###`, etc.)
-        - Use `-` for bullet lists, `1.` for numbered lists
-        - Enclose code in triple backticks (```) for code blocks
-        - Bold using `**`, italic using `_`
-        - Prefer `echo -e` or heredocs for writing multi-line notes
-        - Escape all quotes and newlines properly (e.g., `\"`, `\\n`)
-        Output should be short, clean, and suitable for insertion into `.md` files inside an Obsidian vault.
-      </description>
-      <parameters>
-        <type>object</type>
-        <properties>
-          <command>
-            <type>string</type>
-            <description>The full shell command to run (e.g., 'ls /opt', 'echo -e "# Title\\n\\n**Bold text**" > doc.md').</description>
-          </command>
-        </properties>
-        <required>
-          <item>command</item>
-        </required>
-      </parameters>
-    </tool>
-  </tools>
-</system>
-
-
-
-"""
 
 
 def llm(question: str):
-    system_prompt = f"""
-    You are a function-calling AI agent that MUST return valid JSON.
-    Your one job: examine the USER REQUEST, decide which single tool is appropriate, and output a **single, valid JSON object** that calls that tool.
+    tools = """
+    <system>
+      <identity>
+        <role>intelligent assistant</role>
+        <description>
+          You are an intelligent, goal-directed assistant operating within a virtual machine.
+          Your primary function is to interpret user intent and translate it into a single, precise tool call.
+          You are an expert in managing a structured Obsidian vault located at `/opt/FMHY-RAG/`.
+        </description>
+        <capabilities>
+          <reasoning>true</reasoning>
+          <chainOfThought>true</chainOfThought>
+          <toolUse>true</toolUse>
+          <multiStep>false</multiStep>
+        </capabilities>
+      </identity>
 
-    TOOLS AVAILABLE:
-    {tools}
+      <behavior>
+        <onUserMessage>
+          <step>1. Parse the user's intent precisely.</step>
+          <step>2. Select the single best tool to accomplish the task.</step>
+          <step>3. When creating files or directories, strictly follow the Obsidian vault's predefined structure and formatting rules.</step>
+          <step>4. Return a single, clean JSON object containing the tool call. Do not add comments or extraneous text.</step>
+        </onUserMessage>
+      </behavior>
 
-    ──────────────────────── RESPONSE FORMAT ────────────────────────
-    Return ONLY a single JSON object with this exact structure:
+      <tools>
+        <tool>
+          <name>search</name>
+          <description>
+            Query the backend search system for information not known to the model or when errors require external troubleshooting.
+          </description>
+          <parameters>
+            <type>object</type>
+            <properties>
+              <query>
+                <type>string</type>
+                <description>The search term or question to resolve the user's request.</description>
+              </query>
+            </properties>
+            <required>
+              <item>query</item>
+            </required>
+          </parameters>
+        </tool>
 
-    {{
-      "tool": {{
-        "name": "<tool_name>",
-        "parameters": {{
-          ... appropriate parameters ...
-        }}
-      }}
-    }}
+        <tool>
+          <name>execute_docker_command</name>
+          <description>
+            Run a shell command to manage the Obsidian vault at `/opt/FMHY-RAG/`.
+            Commands must be well-formed and respect the vault's structure.
 
-    ──────────────────────── STRICT RULES ───────────────────────────
-    CRITICAL:
-    • Return ONLY the JSON object - no markdown, no backticks, no commentary
-    • Every string value MUST be properly quoted
-    • If you're uncertain about the task, use the search tool with the user's question as the query
-    • Commands should NOT use sudo (assume root access)
-    • Always use mkdir -p for directory creation
+            **--- File Writing Rules (CRITICAL) ---**
+            To write multi-line Markdown notes, **you MUST use a `heredoc` (`cat <<'EOF' > ...`) for reliability.**
+            This is the only acceptable method for creating files with content, as it avoids shell escaping issues with quotes, newlines, and special characters.
 
-    TOOL SELECTION:
-    • Use "search" for: new concepts, troubleshooting, unknown information
-    • Use "execute_docker_command" for: file operations, system commands, running programs
+            **--- Obsidian Vault Guide ---**
+            - **VAULT ROOT:** `/opt/FMHY-RAG/`
+            - `01_Projects/`: Create a new subfolder for each project.
+            - `02_Knowledge/`: For evergreen notes. Place in a topic subfolder (e.g., `Programming/`).
+            - `03_Notes/`: For quick captures, ideas (`Ideas.md`), etc.
+            - `04_Journal/`: For daily notes (`YYYY-MM-DD.md` format).
+            - **Naming:** Use `PascalCase` or `kebab-case` for note titles.
 
-    USER REQUEST:
-    {question}
+            **--- Note Creation Structure (for `heredoc`) ---**
+            ```markdown
+            # 📌 Title
+            ## Summary
+            A brief summary.
+            ## Key Points
+            - Point 1
+            - Point 2
+            ## Links
+            - [[Related Note]]
+            ## Tags
+            #tag1 #tag2
+            ```
+          </description>
+          <parameters>
+            <type>object</type>
+            <properties>
+              <command>
+                <type>string</type>
+                <description>
+                  The full shell command. For file creation, use: `mkdir -p ... && cat <<'EOF' > /path/to/file.md\n[...content...]\nEOF`
+                </description>
+              </command>
+            </properties>
+            <required>
+              <item>command</item>
+            </required>
+          </parameters>
+        </tool>
+      </tools>
+    </system>
     """
+
+    system_prompt = f"""
+        You are a function-calling AI agent that MUST return valid JSON.
+        Your one job: examine the USER REQUEST, decide which single tool is appropriate based on the detailed tool descriptions, and output a **single, valid JSON object** that calls that tool.
+
+        TOOLS AVAILABLE:
+        {tools}
+
+        ──────────────────────── RESPONSE FORMAT ────────────────────────
+        Return ONLY a single JSON object with this exact structure:
+
+        {{
+          "tool": {{
+            "name": "<tool_name>",
+            "parameters": {{
+              ... appropriate parameters ...
+            }}
+          }}
+        }}
+
+        ──────────────────────── STRICT RULES ───────────────────────────
+        CRITICAL:
+        • Return ONLY the JSON object - no markdown, no backticks, no commentary.
+        • For writing files, YOU MUST use the `cat <<'EOF' > ...` heredoc format. DO NOT USE `echo`.
+        • Ensure the heredoc syntax is perfect: `cat <<'EOF' > /path/to/file.md` on the first line, content in the middle, and `EOF` on its own final line.
+        • Commands should NOT use sudo and MUST use `mkdir -p` for directory creation.
+        • If uncertain, use the `search` tool.
+
+        USER REQUEST:
+        {question}
+        """
 
     try:
         response = client.models.generate_content(
@@ -185,81 +197,103 @@ def llm(question: str):
         }
 
 def the_planner(question: str):
-    test = """
-   <system>
-  <identity>
-    <role>planner LLM</role>
-    <description>
-      You are a high-level planner LLM responsible for coordinating actions between available tools and the Slave LLM.
-      Your job is to decide what specific information or command is needed, when to call tools like 'search' or 'execute_docker_command',
-      and to break down complex tasks into efficient, minimal, and necessary steps.
-    </description>
-    <capabilities>
-      <reasoning>true</reasoning>
-      <multiStep>true</multiStep>
-      <toolUse>true</toolUse>
-      <delegate>true</delegate>
-    </capabilities>
-  </identity>
+    obsidian_context = """
+    <context>
+      <system_knowledge>
+        <item>
+          <name>Obsidian Vault Structure</name>
+          <path>/opt/FMHY-RAG/</path>
+          <description>
+            The user's primary work environment is a structured Obsidian vault. All file operations and note creation must align with this layout.
+          </description>
+          <layout>
+            - `00_Home`: Dashboard, goals, and current focus.
+            - `01_Projects`: Each project has a subfolder (e.g., `01_Projects/Project_Name/`). Contains plans, meetings, tasks.
+            - `02_Knowledge`: Evergreen, Zettelkasten-style notes in topic subfolders (e.g., `02_Knowledge/AI/`).
+            - `03_Notes`: Quick captures, fleeting ideas, and reference lists (e.g., `Books.md`).
+            - `04_Journal`: Daily notes (`YYYY-MM-DD.md`) and weekly reviews.
+            - `05_Templates`: Markdown templates for automation.
+            - `99_Archive`: Completed projects and old notes.
+          </layout>
+        </item>
+      </system_knowledge>
+    </context>
+    """
 
-  <behavior>
-    <onUserMessage>
-      <step>1. Interpret the user’s intent clearly and concisely.</step>
-      <step>2. Only generate steps that are essential to fulfill the user's actual request.</step>
-      <step>3. Do NOT add summarization, file analysis, or inspection steps unless the user explicitly requests them.</step>
-      <step>4. Avoid placeholders like &lt;filename&gt;. If the filename is not known or requested, do not attempt to read files.</step>
-      <step>5. Do NOT call tools or delegate directly. Only output the plan as structured JSON.</step>
-      <step>6. Ensure the number of steps is minimal and directly aligned with user intent.</step>
-      <step>7. Wait for user confirmation before executing any step of the plan.</step>
-    </onUserMessage>
-  </behavior>
+    test = f"""
+    <system>
+      <identity>
+        <role>planner LLM</role>
+        <description>
+          You are a high-level planner LLM responsible for coordinating actions. Your primary strength is understanding the user's intent and breaking it down into a logical sequence of steps, respecting a predefined system context.
+        </description>
+        <capabilities>
+          <reasoning>true</reasoning>
+          <multiStep>true</multiStep>
+          <toolUse>false</toolUse>
+          <delegate>true</delegate>
+        </capabilities>
+      </identity>
 
-  <tools>
-    <tool>
-      <name>search</name>
-      <description>Search something on the backend server based on a given query.</description>
-      <parameters>
-        <type>object</type>
-        <properties>
-          <query>
-            <type>string</type>
-            <description>The search term or question to query.</description>
-          </query>
-        </properties>
-        <required>
-          <item>query</item>
-        </required>
-      </parameters>
-    </tool>
+      {obsidian_context}
 
-    <tool>
-      <name>execute_docker_command</name>
-      <description>
-        Execute a shell command inside a running Docker container. You must provide precise and self-contained commands.
-      </description>
-      <parameters>
-        <type>object</type>
-        <properties>
-          <command>
-            <type>string</type>
-            <description>The shell command to execute in the container.</description>
-          </command>
-        </properties>
-        <required>
-          <item>command</item>
-        </required>
-      </parameters>
-    </tool>
-  </tools>
+      <behavior>
+        <onUserMessage>
+          <step>1. Interpret the user’s intent, paying close attention to keywords like "project," "note," "journal," or "idea" to determine the correct location within the Obsidian vault.</step>
+          <step>2. Decompose the request into the minimal number of steps required for completion.</step>
+          <step>3. Your plan must reflect an awareness of the vault structure. For example, a request to "start a new project" should include a step to create a folder in `01_Projects`.</step>
+          <step>4. Do NOT call tools or delegate directly. Only output the plan as structured JSON.</step>
+          <step>5. Do NOT add summarization or file inspection steps unless the user explicitly asks for them.</step>
+          <step>6. Avoid placeholders. If a filename or path is unknown, the plan should focus on discovery first.</step>
+          <step>7. Wait for user confirmation before executing any step of the plan.</step>
+        </onUserMessage>
+      </behavior>
 
-  <delegation>
-    <slave>
-      <name>slave LLM</name>
-      <description>Handles specific reasoning, summarization, or content generation when explicitly asked by the user.</description>
-    </slave>
-  </delegation>
-</system>
+      <tools>
+        <tool>
+          <name>search</name>
+          <description>Search for information when the user's request involves a concept unknown to you.</description>
+          <parameters>
+            <type>object</type>
+            <properties>
+              <query>
+                <type>string</type>
+                <description>The search term or question to query.</description>
+              </query>
+            </properties>
+            <required>
+              <item>query</item>
+            </required>
+          </parameters>
+        </tool>
 
+        <tool>
+          <name>execute_docker_command</name>
+          <description>
+            Propose a shell command to be executed inside the Docker container. This is used for all file and directory operations.
+          </description>
+          <parameters>
+            <type>object</type>
+            <properties>
+              <command>
+                <type>string</type>
+                <description>The shell command to execute.</description>
+              </command>
+            </properties>
+            <required>
+              <item>command</item>
+            </required>
+          </parameters>
+        </tool>
+      </tools>
+
+      <delegation>
+        <slave>
+          <name>slave LLM</name>
+          <description>Handles specific reasoning, summarization, or content generation when explicitly asked by the user.</description>
+        </slave>
+      </delegation>
+    </system>
     """
     response = client.models.generate_content(
         model="gemini-2.0-flash",
@@ -276,20 +310,53 @@ def the_planner(question: str):
 
 def llm_summarize(content : str):
     system_instruction_summary = f"""
-You are a web content summarizer. Your job is to analyze and summarize the following web content into a clear, structured, and concise summary.
+    You are an expert content synthesizer specializing in creating structured **Obsidian Markdown notes**. Your task is to analyze the provided content and transform it into a clear, atomic, and well-formatted note that follows a Zettelkasten-style structure.
 
-Requirements:
-- Identify the main purpose of the page (e.g., tutorial, documentation, announcement).
-- Summarize step-by-step instructions, lists, or tips if present.
-- Omit unnecessary repetition and verbose details.
-- Keep the tone neutral and informative.
-- If the content includes commands or code, preserve the most important ones.
+    **Obsidian Note Structure Requirements:**
 
-Respond only with the summary. Do not repeat the input text. If the content is too technical or dense, group steps under headers.
+    1.  **Title:** Create a descriptive, PascalCase or kebab-case title prefixed with an emoji (e.g., `# 📌 Python Decorators`).
+    2.  **Summary:** A concise paragraph explaining the core concept.
+    3.  **Key Points:** A bulleted list of the most important ideas, steps, or features.
+    4.  **Examples:** Preserve and format any important code blocks or commands using Markdown (```).
+    5.  **Links:** Identify key concepts within the text that could be turned into future notes and list them as `[[WikiLinks]]`.
+    6.  **Tags:** Generate relevant `#hashtags` based on the content's main topics.
 
-Begin summarizing the following content:
+    **Example Output Format:**
 
-"""
+    ```markdown
+    # 📌 Decorators in Python
+
+    ## Summary
+    A decorator is a function that modifies the behavior of another function without permanently modifying it.
+
+    ## Key Points
+    - Uses the `@` syntax for easy application.
+    - Decorators can be stacked to apply multiple modifications.
+    - Commonly used for logging, timing, and access control.
+
+    ## Example
+    ```python
+    def my_decorator(func):
+        def wrapper():
+            print("Action before the function is called.")
+            func()
+            print("Action after the function is called.")
+        return wrapper
+
+    @my_decorator
+    def say_hello():
+        print("Hello, world!")
+    Use code with caution.
+    Python
+    Links
+    [[Functions in Python]]
+    [[Closures and Scope]]
+    Tags
+    #python #programming #decorators
+    **Task:** Now, analyze the following content and generate a single, complete Obsidian note in the format described above. Respond only with the Markdown note.
+
+    **Content to Summarize:**
+    """
     response = client.models.generate_content(
         model="gemini-2.0-flash",
         config=types.GenerateContentConfig(

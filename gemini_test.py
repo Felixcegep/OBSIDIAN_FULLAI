@@ -5,7 +5,6 @@ import os
 from google import genai
 from google.genai import types
 
-from requester import controller
 from scraper import universal_scraper
 from main_ubuntu import DockerShell
 import docker
@@ -376,7 +375,10 @@ def execute_tool(parsed):
 
     if tool_name == "search":
         # Get search results using controller
-        links = controller(parsed["tool"]["name"], parsed["tool"]["parameters"]["query"])
+        base_url = "http://127.0.0.1:8000/"
+        full_url = f"{base_url}{parsed["tool"]["name"]}?question={parsed["tool"]["parameters"]["query"]}"
+        response = requests.get(full_url)
+        links = response.json()
 
         # Use the first search result's URL
         print("linkkkkkks",links)
@@ -391,6 +393,7 @@ def execute_tool(parsed):
         resume = llm_summarize(content)
 
         # Return the summary
+
         return f"resume website : {resume}"
 
 

@@ -399,9 +399,6 @@ def execute_tool(parsed):
         command = params["command"]
         print("Running Docker command:", command)
 
-        # Optional: show the constructed URL (if using an API)
-        url = f"http://127.0.0.1:8000/docker/{command}"
-        print("API Endpoint:", url)
 
         # Execute the Docker command
         result = machine.run_command(command)
@@ -409,7 +406,6 @@ def execute_tool(parsed):
 
         # Get tree structure of /opt/FMHY-RAG
         tree_output = machine.get_tree("/opt/FMHY-RAG")
-        print("Tree output:\n", tree_output)
 
         return (
             f"🧪 Result of Docker command '{command}':\n{result}\n\n"

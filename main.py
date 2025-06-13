@@ -1,18 +1,15 @@
 from fastapi import FastAPI
-from pydantic import BaseModel
-from searxng_search import search
-from main_ubuntu import DockerShell
-import docker
+from searxng import search
+
 app = FastAPI()
-def test():
-    print("yoool")
 
 @app.get("/")
 async def read_root():
-    test()
-    return {"message": "Hello, dasd!"}
-@app.get("/search")
+
+    return {"message": "Hello, aaaa!"}
+@app.get("/Search")
 async def read_item(question: str):
+    print("questions :", question)
     raw_results = search(question)
     liste_topfive = []
 

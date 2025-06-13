@@ -6,7 +6,7 @@ from google import genai
 from google.genai import types
 
 from scraper import universal_scraper
-from main_ubuntu import DockerShell
+from container import DockerShell
 import docker
 dotenv.load_dotenv()
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
@@ -46,16 +46,16 @@ def llm(question: str):
 
       <tools>
         <tool>
-          <name>search</name>
+          <name>Search</name>
           <description>
-            Query the backend search system for information not known to the model or when errors require external troubleshooting.
+            Query the backend Search system for information not known to the model or when errors require external troubleshooting.
           </description>
           <parameters>
             <type>object</type>
             <properties>
               <query>
                 <type>string</type>
-                <description>The search term or question to resolve the user's request.</description>
+                <description>The Search term or question to resolve the user's request.</description>
               </query>
             </properties>
             <required>
@@ -141,7 +141,7 @@ def llm(question: str):
     • For writing files, YOU MUST use the `cat <<'EOF' > ...` heredoc format. DO NOT USE `echo`.
     • Ensure the heredoc syntax is perfect: `cat <<'EOF' > /path/to/file.md` on the first line, content in the middle, and `EOF` on its own final line.
     • Commands should NOT use sudo and MUST use `mkdir -p` for directory creation.
-    • If uncertain, use the `search` tool.
+    • If uncertain, use the `Search` tool.
 
     USER REQUEST:
     {question}
@@ -174,22 +174,22 @@ def llm(question: str):
         return parsed
 
     except json.JSONDecodeError:
-        # If JSON parsing fails, fall back to search
-        print(f"JSON parsing failed, falling back to search for: {question}")
+        # If JSON parsing fails, fall back to Search
+        print(f"JSON parsing failed, falling back to Search for: {question}")
         return {
             "tool": {
-                "name": "search",
+                "name": "Search",
                 "parameters": {
                     "query": question
                 }
             }
         }
     except Exception as e:
-        # For any other error, also fall back to search
-        print(f"Unexpected error, falling back to search for: {question}")
+        # For any other error, also fall back to Search
+        print(f"Unexpected error, falling back to Search for: {question}")
         return {
             "tool": {
-                "name": "search",
+                "name": "Search",
                 "parameters": {
                     "query": question
                 }
@@ -222,78 +222,85 @@ def the_planner(question: str):
 
     test = f"""
     <system>
-      <identity>
-        <role>planner LLM</role>
-        <description>
-          You are a high-level planner LLM responsible for coordinating actions. Your primary strength is understanding the user's intent and breaking it down into a logical sequence of steps, respecting a predefined system context.
-        </description>
-        <capabilities>
-          <reasoning>true</reasoning>
-          <multiStep>true</multiStep>
-          <toolUse>false</toolUse>
-          <delegate>true</delegate>
-        </capabilities>
-      </identity>
+  <identity>
+    <role>planner LLM</role>
+    <description>
+      You are a high-level planner LLM responsible for coordinating actions. Your primary strength is understanding the
+      user’s intent and breaking it down into a logical sequence of steps, respecting a predefined system context.
+    </description>
+    <capabilities>
+      <reasoning>true</reasoning>
+      <multiStep>true</multiStep>
+      <toolUse>false</toolUse>
+      <delegate>true</delegate>
+    </capabilities>
+  </identity>
 
-      {obsidian_context}
+  {obsidian_context}
 
-      <behavior>
-        <onUserMessage>
-          <step>1. Interpret the user’s intent, paying close attention to keywords like "project," "note," "journal," or "idea" to determine the correct location within the Obsidian vault.</step>
-          <step>2. Decompose the request into the minimal number of steps required for completion.</step>
-          <step>3. Your plan must reflect an awareness of the vault structure. For example, a request to "start a new project" should include a step to create a folder in `01_Projects`.</step>
-          <step>4. Do NOT call tools or delegate directly. Only output the plan as structured JSON.</step>
-          <step>5. Do NOT add summarization or file inspection steps unless the user explicitly asks for them.</step>
-          <step>6. Avoid placeholders. If a filename or path is unknown, the plan should focus on discovery first.</step>
-          <step>7. Wait for user confirmation before executing any step of the plan.</step>
-        </onUserMessage>
-      </behavior>
+  <behavior>
+    <onUserMessage>
+      <step>1. Interpret the user’s intent, paying close attention to keywords like "project," "note," "journal," or
+        "idea" to determine the correct location within the Obsidian vault.</step>
+      <step>2. Decompose the request into the minimal number of steps required for completion.</step>
+      <step>3. Ensure every Obsidian link (e.g. <code>[[Domestication]]</code>) targets a file that already exists in the
+        vault. If the file is missing, plan a discovery step first instead of creating the link.</step>
+      <step>4. Your plan must reflect an awareness of the vault structure. For example, a request to "start a new
+        project" should include a step to create a folder in <code>01_Projects</code>.</step>
+      <step>5. Do NOT call tools or delegate directly. Only output the plan as structured JSON.</step>
+      <step>6. Do NOT add summarization or file-inspection steps unless the user explicitly asks for them.</step>
+      <step>7. Avoid placeholders. If a filename or path is unknown, the plan should focus on discovery first.</step>
+      <step>8. Wait for user confirmation before executing any step of the plan.</step>
+    </onUserMessage>
+  </behavior>
 
-      <tools>
-        <tool>
-          <name>search</name>
-          <description>Search for information when the user's request involves a concept unknown to you.</description>
-          <parameters>
-            <type>object</type>
-            <properties>
-              <query>
-                <type>string</type>
-                <description>The search term or question to query.</description>
-              </query>
-            </properties>
-            <required>
-              <item>query</item>
-            </required>
-          </parameters>
-        </tool>
+  <tools>
+    <tool>
+      <name>Search</name>
+      <description>Search for information when the user's request involves a concept unknown to you.</description>
+      <parameters>
+        <type>object</type>
+        <properties>
+          <query>
+            <type>string</type>
+            <description>The Search term or question to query.</description>
+          </query>
+        </properties>
+        <required>
+          <item>query</item>
+        </required>
+      </parameters>
+    </tool>
 
-        <tool>
-          <name>execute_docker_command</name>
-          <description>
-            Propose a shell command to be executed inside the Docker container. This is used for all file and directory operations.
-          </description>
-          <parameters>
-            <type>object</type>
-            <properties>
-              <command>
-                <type>string</type>
-                <description>The shell command to execute.</description>
-              </command>
-            </properties>
-            <required>
-              <item>command</item>
-            </required>
-          </parameters>
-        </tool>
-      </tools>
+    <tool>
+      <name>execute_docker_command</name>
+      <description>
+        Propose a shell command to be executed inside the Docker container. This is used for all file and directory
+        operations.
+      </description>
+      <parameters>
+        <type>object</type>
+        <properties>
+          <command>
+            <type>string</type>
+            <description>The shell command to execute.</description>
+          </command>
+        </properties>
+        <required>
+          <item>command</item>
+        </required>
+      </parameters>
+    </tool>
+  </tools>
 
-      <delegation>
-        <slave>
-          <name>slave LLM</name>
-          <description>Handles specific reasoning, summarization, or content generation when explicitly asked by the user.</description>
-        </slave>
-      </delegation>
-    </system>
+  <delegation>
+    <slave>
+      <name>slave LLM</name>
+      <description>Handles specific reasoning, summarization, or content generation when explicitly asked by the user.</description>
+    </slave>
+  </delegation>
+</system>
+
     """
     response = client.models.generate_content(
         model="gemini-2.0-flash",
@@ -308,61 +315,151 @@ def the_planner(question: str):
     except json.decoder.JSONDecodeError:
         return "formated wrong"
 
-def llm_summarize(content : str):
+def llm_summarize(content: str) -> str:
+    """Summarize arbitrary content into a single, well‑structured Obsidian note.
+
+    The generated note follows a Zettelkasten‑friendly template and *only* links to
+    notes that already exist in the vault at /opt/FMHY‑RAG.
+    """
+
+    # 1) Inspect the current vault so the model knows which links are valid
+    vault_tree = machine.get_tree("/opt/FMHY-RAG")
+    print(vault_tree)
+
+    # 2) System prompt with strict formatting + link‑validation rule
     system_instruction_summary = f"""
-    You are an expert content synthesizer specializing in creating structured **Obsidian Markdown notes**. Your task is to analyze the provided content and transform it into a clear, atomic, and well-formatted note that follows a Zettelkasten-style structure.
+    <system>
+      <identity>
+        <role>content-synthesizer</role>
+        <description>
+          You are an expert content synthesizer who converts arbitrary text into a
+          single, atomic Obsidian Markdown note that follows Zettelkasten principles.
+        </description>
+        <capabilities>
+          <reasoning>true</reasoning>
+          <multiStep>false</multiStep>
+          <toolUse>false</toolUse>
+        </capabilities>
+      </identity>
 
-    **Obsidian Note Structure Requirements:**
+      <behavior>
+        <onUserMessage>
+          <step>1. Parse the user-provided content.</step>
+          <step>2. Produce ONE complete Markdown note with the structure below.</step>
+          <step>3. When creating links, <strong>only</strong> link to the filenames listed in the
+                  “Allowed note titles” block (case-sensitive, no “.md” extension).
+                  Do <strong>not</strong> link to folders or any other names.</step>
+          <step>4. Respond with nothing except the finished Markdown note.</step>
+        </onUserMessage>
+      </behavior>
 
-    1.  **Title:** Create a descriptive, PascalCase or kebab-case title prefixed with an emoji (e.g., `# 📌 Python Decorators`).
-    2.  **Summary:** A concise paragraph explaining the core concept.
-    3.  **Key Points:** A bulleted list of the most important ideas, steps, or features.
-    4.  **Examples:** Preserve and format any important code blocks or commands using Markdown (```).
-    5.  **Links:** Identify key concepts within the text that could be turned into future notes and list them as `[[WikiLinks]]`.
-    6.  **Tags:** Generate relevant `#hashtags` based on the content's main topics.
+      <!-- ──────────────────────────────────────────────────────────────── -->
+      <!--              Obsidian Note Structure Requirements               -->
+      <!-- ──────────────────────────────────────────────────────────────── -->
+      <instructions>
+        You must follow this template:
 
-    **Example Output Format:**
+        1. <strong>Title</strong> – PascalCase or kebab-case, prefixed with an emoji
+           (e.g., <code># 📌 Python-Decorators</code>).
+        2. <strong>Summary</strong> – one concise paragraph.
+        3. <strong>Key Points</strong> – bulleted list of core ideas.
+        4. <strong>Examples</strong> – fenced code blocks where relevant.
+        5. <strong>Links</strong> – only <code>[[WikiLinks]]</code> to allowed note titles.
+        6. <strong>Tags</strong> – relevant <code>#hashtags</code>.
+      </instructions>
 
+      <!-- ──────────────────────────────────────────────────────────────── -->
+      <!--           Allowed note titles (link whitelist)                  -->
+      <!-- ──────────────────────────────────────────────────────────────── -->
+      <allowedNoteTitles>
+        templates
+        note
+        Cat
+        Blocking-Bypassing-Captchas-reCAPTCHAs
+        project
+        journal
+        CodingSession
+        knowledge
+        Solving-Amazon-Flex-Captcha-Issues
+        home
+      </allowedNoteTitles>
+
+      <!-- Full vault tree shown for reference; do not link to folders. -->
+      <vaultTree>
+    |--- 05_Templates
+    |   |--- templates.md
+    |--- .obsidian
+    |   |--- app.json
+    |--- 03_Notes
+    |   |--- note.md
+    |   |--- Cat.md
+    |   |--- Blocking-Bypassing-Captchas-reCAPTCHAs.md
+    |--- 01_Projects
+    |   |--- project.md
+    |--- 04_Journal
+    |   |--- journal.md
+    |   |--- CodingSession.md
+    |--- 02_Knowledge
+    |   |--- knowledge.md
+    |   |--- Web-Scraping
+    |   |--- Animals
+    |   |--- LinuxCommands
+    |   |--- Development
+    |   |--- Solving-Amazon-Flex-Captcha-Issues.md
+    |   |--- Dinosaurs
+    |   |--- Paleontology
+    |   |--- Biology
+    |--- 00_Home
+    |   |--- home.md
+      </vaultTree>
+
+      <!-- ──────────────────────────────────────────────────────────────── -->
+      <!--                     Example output format                       -->
+      <!-- ──────────────────────────────────────────────────────────────── -->
+      <example>
     ```markdown
-    # 📌 Decorators in Python
+    # 📌 Decorators-in-Python
 
     ## Summary
-    A decorator is a function that modifies the behavior of another function without permanently modifying it.
+    A decorator is a function that modifies the behaviour of another function without permanently changing it.
 
     ## Key Points
-    - Uses the `@` syntax for easy application.
-    - Decorators can be stacked to apply multiple modifications.
-    - Commonly used for logging, timing, and access control.
+    - Uses the `@` syntax for simple application.
+    - Multiple decorators can be stacked.
+    - Typical use-cases: logging, timing, access control.
 
     ## Example
     ```python
-    def my_decorator(func):
-        def wrapper():
-            print("Action before the function is called.")
-            func()
-            print("Action after the function is called.")
-        return wrapper
-
     @my_decorator
     def say_hello():
         print("Hello, world!")
-    Use code with caution.
-    Python
     Links
-    [[Functions in Python]]
-    [[Closures and Scope]]
+    [[Functions-in-Python]]
+    [[Closures-and-Scope]]
+
     Tags
     #python #programming #decorators
-    **Task:** Now, analyze the following content and generate a single, complete Obsidian note in the format described above. Respond only with the Markdown note.
 
-    **Content to Summarize:**
+    pgsql
+    Copy
+    Edit
+      </example>
+
+      <finalTask>
+        Analyse the content supplied by the user and output ONE complete Markdown
+        note that obeys all rules above. Do <strong>not</strong> wrap your answer in XML—return
+        only the Markdown.
+      </finalTask>
+    </system>
     """
+
+    # 3) Call Gemini with the enhanced system instruction
     response = client.models.generate_content(
         model="gemini-2.0-flash",
-        config=types.GenerateContentConfig(
-            system_instruction=system_instruction_summary),
-        contents=content
+        config=types.GenerateContentConfig(system_instruction=system_instruction_summary),
+        contents=content,
     )
+
     return response.text
 # --- Tool executor ---
 def execute_tool(parsed):
@@ -373,14 +470,16 @@ def execute_tool(parsed):
     tool_name = tool["name"]
     params = tool["parameters"]
 
-    if tool_name == "search":
-        # Get search results using controller
+    if tool_name == "Search":
+        # Get Search results using controller
         base_url = "http://127.0.0.1:8000/"
         full_url = f"{base_url}{parsed["tool"]["name"]}?question={parsed["tool"]["parameters"]["query"]}"
+        print("full url", full_url)
         response = requests.get(full_url)
+
         links = response.json()
 
-        # Use the first search result's URL
+        # Use the first Search result's URL
         print("linkkkkkks",links)
 
         link_test = links["searched"][0]["url"]
@@ -435,3 +534,5 @@ if __name__ == '__main__':
             result = execute_tool(parsed)
             print(result)
             session_history += f"\n> {question}\n{result}\n"
+            print("test",session_history)
+            print("-" * 10)

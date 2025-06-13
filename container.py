@@ -52,14 +52,33 @@ class DockerShell:
     def get_current_path(self):
         return self.current_path
 
-    def get_tree(self, path=None, depth=2) -> str:
-        """Get a tree-like listing of the given directory, excluding .git."""
+    def get_tree(
+            self,
+            path: str | None = None,
+            depth: int = 2,
+            files_only: bool = False,
+    ) -> str:
+        """
+        List all entries under *path* up to *depth*.
+        Tries `tree` first; falls back to `find` if tree isn't installed.
+        """
         target_path = path or self.current_path
-        tree_command = (
-            f"bash -c 'cd \"{target_path}\" && "
-            f"find . -maxdepth {depth} -print | grep -v \"^./.git\" "
-            f"| sed -e \"s/[^\\/]*\\//|   /g\" -e \"s/|   \\([^|]\\)/|--- \\1/\"'"
+
+        # First half of pipeline: choose tree or find
+        primary_cmd = (
+            # does `tree` exist?
+            f'if command -v tree >/dev/null 2>&1; then '
+            f'  tree -afi --noreport -L {depth} "{target_path}"; '
+            f'else '
+            f'  find "{target_path}" -maxdepth {depth} -print; '
+            f'fi'
         )
-        result = self.container.exec_run(tree_command, tty=True)
-        return result.output.decode(errors="ignore").strip()
+
+        # Common filters
+        pipeline = primary_cmd + ' | grep -v "/\\.git/"'
+        if files_only:
+            pipeline += ' | grep -v "/$"'
+
+        result = self.container.exec_run(f"bash -lc '{pipeline}'", tty=True)
+        return result.output.decode(errors='ignore').strip()
 

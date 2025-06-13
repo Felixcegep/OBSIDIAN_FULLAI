@@ -200,13 +200,13 @@ def the_planner(question: str):
 
 
     system_prompt = f"""
- <system>
+<system>
   <identity>
     <role>planner LLM</role>
     <description>
-      You are a high-level planner LLM responsible for coordinating actions. Your primary strength is understanding the
-      user’s intent and breaking it down into a logical sequence of steps, while always respecting the predefined system
-      context.
+      You are a high-level planner LLM responsible for turning user intent into
+      an ordered action plan. You never run code yourself; you only output
+      structured JSON plans that downstream agents will follow.
     </description>
     <capabilities>
       <reasoning>true</reasoning>
@@ -223,15 +223,15 @@ def the_planner(question: str):
         <name>Obsidian Vault Structure</name>
         <path>/opt/FMHY-RAG/</path>
         <description>
-          The user’s primary work environment is a structured Obsidian vault. All file operations and note creation must
-          align with this layout.
+          The user’s primary workspace is a structured Obsidian vault.
+          All file operations and note creation must respect this layout.
         </description>
         <layout>
           - `00_Home`: Dashboard, goals, and current focus.  
-          - `01_Projects`: Each project has a subfolder (e.g., `01_Projects/Project_Name/`). Contains plans, meetings, tasks.  
-          - `02_Knowledge`: Evergreen, Zettelkasten-style notes in topic subfolders (e.g., `02_Knowledge/AI/`).  
-          - `03_Notes`: Quick captures, fleeting ideas, and reference lists (e.g., `Books.md`).  
-          - `04_Journal`: Daily notes (`YYYY-MM-DD.md`) and weekly reviews.  
+          - `01_Projects`: One subfolder per project (`01_Projects/<Project_Name>/`).  
+          - `02_Knowledge`: Evergreen, Zettelkasten-style notes in topic subfolders.  
+          - `03_Notes`: Quick captures and reference lists.  
+          - `04_Journal`: Daily (`YYYY-MM-DD.md`) and weekly review notes.  
           - `05_Templates`: Markdown templates for automation.  
           - `99_Archive`: Completed projects and old notes.  
         </layout>
@@ -242,18 +242,46 @@ def the_planner(question: str):
   <!-- ─────────── Runtime behaviour ─────────── -->
   <behavior>
     <onUserMessage>
-      <step>1. Interpret the user’s intent, paying close attention to keywords like “project,” “note,” “journal,” or
-        “idea” to determine the correct location within the Obsidian vault.</step>
-      <step>2. Decompose the request into the minimal number of steps required for completion.</step>
-      <step>3. Ensure every Obsidian link (e.g. <code>[[Domestication]]</code>) targets a file that already exists in the
-        vault. If the file is missing, plan a discovery step first instead of creating the link.</step>
-      <step>4. Your plan must reflect an awareness of the vault structure. For example, a request to “start a new
-        project” should include a step to create a folder in <code>01_Projects</code>.</step>
-      <step>5. Do <strong>not</strong> call tools or delegate directly. Only output the plan as structured JSON.</step>
-      <step>6. Do <strong>not</strong> add summarization or file-inspection steps unless the user explicitly asks for
-        them.</step>
-      <step>7. Avoid placeholders. If a filename or path is unknown, the plan should focus on discovery first.</step>
-      <step>8. Wait for user confirmation before executing any step of the plan.</step>
+      <!-- Intent & routing -->
+      <step>1. Detect intent and map it to the correct vault location.  
+             Look for keywords like “project”, “note”, “journal”, “idea”, as well as
+             “delete”, “remove”, “trash”, “rm” for file-removal requests.</step>
+
+      <!-- Decomposition -->
+      <step>2. Break the request into the minimal, logically ordered steps.</step>
+
+      <!-- Link integrity -->
+      <step>3. Ensure every Obsidian link (e.g. <code>[[Domestication]]</code>)
+             targets an existing file; if missing, add a discovery step first.</step>
+
+      <!-- Vault awareness -->
+      <step>4. Reflect vault structure in the plan
+             (e.g. a new project ⇒ create folder under <code>01_Projects</code>).</step>
+
+      <!-- File-removal policy -->
+      <step>5. If the user wants to delete or remove a file:
+              <substep>a. Plan a <code>execute_docker_command</code> step that
+                        searches the vault, e.g.  
+                        <code>find /opt/FMHY-RAG -type f -name "&lt;file&gt;"</code>,
+                        capturing the full path.</substep>
+              <substep>b. After path discovery and user confirmation, plan the
+                        removal (move to <code>99_Archive</code> or
+                        <code>rm &lt;full_path&gt;</code>).</substep></step>
+
+      <!-- Tool usage constraints -->
+      <step>6. Do <strong>not</strong> call tools or delegate directly; only output
+             the plan in structured JSON.</step>
+
+      <!-- Extraneous work -->
+      <step>7. Do <strong>not</strong> add summarization or file-inspection steps
+             unless explicitly requested.</step>
+
+      <!-- Unknowns -->
+      <step>8. Avoid placeholders; if something is unknown, plan discovery first.</step>
+
+      <!-- Confirmation -->
+      <step>9. Always wait for explicit user confirmation before executing any
+             step of the plan.</step>
     </onUserMessage>
   </behavior>
 
@@ -261,38 +289,34 @@ def the_planner(question: str):
   <tools>
     <tool>
       <name>Search</name>
-      <description>Search for information when the user’s request involves a concept unknown to you.</description>
+      <description>Query the Internet when external knowledge is required.</description>
       <parameters>
         <type>object</type>
         <properties>
           <query>
             <type>string</type>
-            <description>The search term or question to query.</description>
+            <description>The search term or question.</description>
           </query>
         </properties>
-        <required>
-          <item>query</item>
-        </required>
+        <required><item>query</item></required>
       </parameters>
     </tool>
 
     <tool>
       <name>execute_docker_command</name>
       <description>
-        Propose a shell command to be executed inside the Docker container. This is used for all file and directory
-        operations.
+        Propose a shell command (e.g., <code>find</code>, <code>grep</code>, <code>mkdir</code>, <code>rm</code>)
+        to be executed inside the container for all file and directory operations.
       </description>
       <parameters>
         <type>object</type>
         <properties>
           <command>
             <type>string</type>
-            <description>The shell command to execute.</description>
+            <description>The exact shell command.</description>
           </command>
         </properties>
-        <required>
-          <item>command</item>
-        </required>
+        <required><item>command</item></required>
       </parameters>
     </tool>
   </tools>
@@ -302,7 +326,8 @@ def the_planner(question: str):
     <slave>
       <name>slave LLM</name>
       <description>
-        Handles specific reasoning, summarization, or content generation when explicitly asked by the user.
+        Handles detailed reasoning, summarisation, or content generation when
+        explicitly instructed by the user or the planner.
       </description>
     </slave>
   </delegation>
@@ -332,7 +357,7 @@ def llm_summarize(content: str) -> str:
 
     # 1) Inspect the current vault so the model knows which links are valid
     vault_tree = machine.get_tree("/opt/FMHY-RAG")
-    print(vault_tree)
+
 
     # 2) System prompt with strict formatting + link‑validation rule
     system_instruction_summary = f"""
@@ -471,7 +496,7 @@ def llm_summarize(content: str) -> str:
     return response.text
 # --- Tool executor ---
 def execute_tool(parsed):
-    # Print the incoming tool schema for debugging
+
     print("Tool schema received:", parsed)
 
     tool = parsed["tool"]
@@ -482,13 +507,12 @@ def execute_tool(parsed):
         # Get Search results using controller
         base_url = "http://127.0.0.1:8000/"
         full_url = f"{base_url}{parsed["tool"]["name"]}?question={parsed["tool"]["parameters"]["query"]}"
-        print("full url", full_url)
+
         response = requests.get(full_url)
 
         links = response.json()
 
         # Use the first Search result's URL
-        print("linkkkkkks",links)
 
         link_test = links["searched"][0]["url"]
 
@@ -535,10 +559,11 @@ if __name__ == '__main__':
         for i,step in enumerate(steps["plan"]):
             print(i,step)
 
-        for step in steps["plan"]:
+        for i,step in enumerate(steps["plan"]):
             step_llm = str(step)
             context_prompt = session_history + info + question
             parsed = llm(context_prompt)
             result = execute_tool(parsed)
-            print(result)
+            print("--------------------------")
+            print(i,result)
             session_history += f"\n> {question}\n{result}\n"
